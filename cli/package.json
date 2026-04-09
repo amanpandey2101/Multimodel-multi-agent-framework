@@ -1,0 +1,27 @@
+{
+  "name": "multi-agent-cli",
+  "version": "1.0.0",
+  "description": "Multi-Agent Platform CLI — Claude Code-style terminal interface",
+  "type": "module",
+  "main": "src/index.tsx",
+  "bin": {
+    "agent": "./run.mjs"
+  },
+  "scripts": {
+    "start": "tsx src/index.tsx",
+    "dev": "tsx --watch src/index.tsx"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.101.1",
+    "@types/node": "^25.5.0",
+    "@types/react": "^19.2.14",
+    "chalk": "^5.4.1",
+    "dotenv": "^17.4.0",
+    "ink": "^5.2.1",
+    "ink-text-input": "^6.0.0",
+    "node-fetch": "^3.3.2",
+    "react": "^19.2.4",
+    "tsx": "^4.21.0",
+    "typescript": "^5.8.3"
+  }
+}
