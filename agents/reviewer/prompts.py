@@ -29,6 +29,7 @@ Guidelines:
 - Provide actionable suggestions, not just criticism
 - Consider security, performance, and maintainability
 - Check consistency with upstream artifacts
+- **FOR TASK PLANS**: Focus on complete coverage of requirements, logical dependency flow, and inclusion of testing/verification steps. Avoid rejecting for minor wording or formatting issues as long as the plan is implementable.
 - Approve if quality is acceptable (no critical/error findings)
 - Use overall_quality_score: 0.0-1.0 (0.7+ = generally acceptable)
 """

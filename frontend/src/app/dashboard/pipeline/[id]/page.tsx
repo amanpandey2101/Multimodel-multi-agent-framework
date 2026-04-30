@@ -71,32 +71,45 @@ function inferLanguage(path: string): string {
 
 function parseArtifactFiles(content: unknown): GeneratedFile[] {
   if (!content) return [];
+  
+  const toString = (val: unknown): string => {
+    if (typeof val === "string") return val;
+    return JSON.stringify(val, null, 2);
+  };
+
   if (typeof content === "string") {
     return [{ path: "output.txt", content, language: "text" }];
   }
+
   if (typeof content === "object" && content !== null) {
     const c = content as Record<string, unknown>;
+    
     // Handle { files: [{path, content}] } format
     if (Array.isArray(c.files)) {
-      return (c.files as Array<{ path?: string; content?: string }>).map((f, i) => ({
+      return (c.files as Array<{ path?: string; content?: unknown }>).map((f, i) => ({
         path: f.path || `file_${i}`,
-        content: typeof f.content === "string" ? f.content : JSON.stringify(f.content, null, 2),
+        content: toString(f.content),
         language: inferLanguage(f.path || ""),
       }));
     }
-    // Handle { path: content } flat map
+    
+    // Handle { path: content } flat map where all values are strings
     const entries = Object.entries(c);
-    if (entries.length > 0 && typeof entries[0][1] === "string") {
+    const areAllValuesStrings = entries.every(([_, v]) => typeof v === "string");
+    
+    if (entries.length > 0 && areAllValuesStrings) {
       return entries.map(([path, content]) => ({
         path,
         content: content as string,
         language: inferLanguage(path),
       }));
     }
-    // Fallback: stringify the whole thing
-    return [{ path: "artifact.json", content: JSON.stringify(content, null, 2), language: "json" }];
+    
+    // Fallback: if it's a generic object but not a file map, stringify it
+    return [{ path: "artifact.json", content: toString(content), language: "json" }];
   }
-  return [];
+  
+  return [{ path: "artifact.txt", content: String(content), language: "text" }];
 }
 
 function CodeBlock({ code, language }: { code: string; language: string }) {
@@ -414,16 +427,25 @@ export default function PipelineDetailPage({
             <span className="badge-dot" />
             {pipeline.status}
           </span>
+          {/* Push to GitHub Button */}
+          {getStageStatus("implementation") === "completed" && (
+            ghStatus?.connected ? (
+              <button className="btn btn-success btn-sm" onClick={() => setShowPush(!showPush)}>
+                <UploadCloud size={14} />
+                Push to GitHub
+              </button>
+            ) : (
+              <Link href="/dashboard/settings" className="btn btn-secondary btn-sm" style={{ gap: 8 }}>
+                <GitBranch size={14} />
+                Connect GitHub to Push
+              </Link>
+            )
+          )}
+          
           {pipeline.status === "running" && (
             <button className="btn btn-danger btn-sm" onClick={() => pipelinesApi.cancel(id)}>
               <XCircle size={14} />
               Cancel
-            </button>
-          )}
-          {pipeline.status === "completed" && ghStatus?.connected && (
-            <button className="btn btn-success btn-sm" onClick={() => setShowPush(!showPush)}>
-              <UploadCloud size={14} />
-              Push to GitHub
             </button>
           )}
         </div>

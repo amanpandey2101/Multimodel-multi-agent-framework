@@ -40,6 +40,8 @@ CREATE TABLE IF NOT EXISTS public.pipeline_stages (
   stage_name TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'pending',
   agent_role TEXT,
+  input_data JSONB DEFAULT '{}'::jsonb,
+  output_data JSONB DEFAULT '{}'::jsonb,
   iteration INTEGER DEFAULT 1,
   started_at TIMESTAMPTZ,
   completed_at TIMESTAMPTZ

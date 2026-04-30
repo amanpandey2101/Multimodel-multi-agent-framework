@@ -77,7 +77,7 @@ CREATE TABLE pipeline_events (
 );
 
 -- ─── GitHub Connections ───────────────────────────────────────
-CREATE TABLE github_connections (
+CREATE TABLE github_tokens (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE UNIQUE,
     access_token TEXT NOT NULL,
@@ -94,7 +94,7 @@ ALTER TABLE pipelines ENABLE ROW LEVEL SECURITY;
 ALTER TABLE pipeline_stages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE artifacts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE pipeline_events ENABLE ROW LEVEL SECURITY;
-ALTER TABLE github_connections ENABLE ROW LEVEL SECURITY;
+ALTER TABLE github_tokens ENABLE ROW LEVEL SECURITY;
 
 -- Projects: users can only see/modify their own
 CREATE POLICY "Users manage own projects" ON projects
@@ -151,11 +151,11 @@ CREATE POLICY "Service role full access artifacts" ON artifacts
     FOR ALL USING (auth.role() = 'service_role');
 CREATE POLICY "Service role full access events" ON pipeline_events
     FOR ALL USING (auth.role() = 'service_role');
-CREATE POLICY "Service role full access github" ON github_connections
+CREATE POLICY "Service role full access github" ON github_tokens
     FOR ALL USING (auth.role() = 'service_role');
 
 -- GitHub connections: users manage only their own
-CREATE POLICY "Users manage own github" ON github_connections
+CREATE POLICY "Users manage own github" ON github_tokens
     FOR ALL USING (auth.uid() = user_id)
     WITH CHECK (auth.uid() = user_id);
 
@@ -172,4 +172,4 @@ CREATE INDEX idx_pipelines_project ON pipelines(project_id);
 CREATE INDEX idx_pipeline_stages_pipeline ON pipeline_stages(pipeline_id);
 CREATE INDEX idx_artifacts_pipeline ON artifacts(pipeline_id);
 CREATE INDEX idx_pipeline_events_pipeline ON pipeline_events(pipeline_id);
-CREATE UNIQUE INDEX idx_github_connections_user ON github_connections(user_id);
+CREATE UNIQUE INDEX idx_github_tokens_user ON github_tokens(user_id);

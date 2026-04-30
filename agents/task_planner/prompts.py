@@ -29,7 +29,10 @@ Guidelines:
 - Order tasks topologically (dependencies first)
 - Group related tasks by component
 - Estimate complexity honestly
-- Include testing tasks alongside implementation tasks
+- MANDATORY: Include specific unit and integration testing tasks for every new feature
+- MANDATORY: Include documentation tasks (README updates, API docs)
+- MANDATORY: Use standardized task IDs starting from T-001
+- Ensure the 'implementation_order' list is complete and follows dependencies
 """
 
 USER_PROMPT_TEMPLATE = """Create a detailed task breakdown based on the following.

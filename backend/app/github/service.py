@@ -186,7 +186,7 @@ def get_github_token(user_id: str) -> Optional[str]:
     """Retrieve stored GitHub token for a user from Supabase."""
     supabase = get_supabase()
     result = (
-        supabase.table("github_connections")
+        supabase.table("github_tokens")
         .select("access_token")
         .eq("user_id", user_id)
         .maybe_single()

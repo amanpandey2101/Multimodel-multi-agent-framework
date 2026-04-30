@@ -5,6 +5,7 @@ GitHub API router: connect accounts, list repos, push pipeline artifacts.
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -14,6 +15,8 @@ from supabase import Client
 from backend.app.auth.dependencies import get_current_user
 from backend.app.github.service import GitHubService, get_github_service
 from backend.app.supabase_client import get_supabase_dependency
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -117,7 +120,7 @@ async def connect_github(
         gh = GitHubService(body.access_token)
         username = gh.username
 
-        supabase.table("github_connections").upsert({
+        supabase.table("github_tokens").upsert({
             "user_id": user["id"],
             "access_token": body.access_token,
             "github_username": username,
@@ -137,18 +140,22 @@ async def github_status(
     supabase: Client = Depends(get_supabase_dependency),
 ):
     """Check if GitHub is connected."""
-    result = (
-        supabase.table("github_connections")
-        .select("github_username")
-        .eq("user_id", user["id"])
-        .maybe_single()
-        .execute()
-    )
-    if result.data:
-        return {
-            "connected": True,
-            "github_username": result.data["github_username"],
-        }
+    try:
+        result = (
+            supabase.table("github_tokens")
+            .select("github_username")
+            .eq("user_id", user["id"])
+            .maybe_single()
+            .execute()
+        )
+        if result and result.data:
+            return {
+                "connected": True,
+                "github_username": result.data["github_username"],
+            }
+    except Exception as exc:
+        logger.error(f"Error checking GitHub status: {exc}")
+    
     return {"connected": False}
 
 
@@ -158,7 +165,7 @@ async def disconnect_github(
     supabase: Client = Depends(get_supabase_dependency),
 ):
     """Disconnect GitHub account."""
-    supabase.table("github_connections").delete().eq("user_id", user["id"]).execute()
+    supabase.table("github_tokens").delete().eq("user_id", user["id"]).execute()
     return {"disconnected": True}
 
 
