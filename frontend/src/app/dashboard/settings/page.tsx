@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { githubApi, type GitHubStatus, type GitHubRepo } from "@/lib/api";
 import {
   GitBranch,
@@ -15,6 +16,8 @@ import {
 } from "lucide-react";
 
 export default function SettingsPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [ghStatus, setGhStatus] = useState<GitHubStatus | null>(null);
   const [ghToken, setGhToken] = useState("");
   const [connecting, setConnecting] = useState(false);
@@ -31,6 +34,24 @@ export default function SettingsPage() {
   useEffect(() => {
     githubApi.status().then(setGhStatus).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    const github = searchParams.get("github");
+    if (!github) return;
+
+    const username = searchParams.get("username");
+    const message = searchParams.get("message");
+
+    if (github === "connected") {
+      githubApi.status().then(setGhStatus).catch(() => {});
+      setToast(username ? `Connected as @${username}` : "GitHub connected");
+      setTimeout(() => setToast(""), 4000);
+    } else if (github === "error") {
+      setError(message || "GitHub connection failed");
+    }
+
+    router.replace("/dashboard/settings");
+  }, [router, searchParams]);
 
   const handleConnectGithub = async () => {
     if (!ghToken.trim()) return;
@@ -66,6 +87,18 @@ export default function SettingsPage() {
       setShowRepos(true);
     } catch { /* ignore */ }
     setLoadingRepos(false);
+  };
+
+  const handleConnectGithubOAuth = async () => {
+    setConnecting(true);
+    setError("");
+    try {
+      const { authorization_url } = await githubApi.oauthUrl("/dashboard/settings");
+      window.location.href = authorization_url;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to start GitHub OAuth");
+      setConnecting(false);
+    }
   };
 
   const langColor: Record<string, string> = {
@@ -113,7 +146,20 @@ export default function SettingsPage() {
             <>
               <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginBottom: 16, lineHeight: 1.5 }}>
                 Connect your GitHub account to push pipeline-generated code directly to your repositories.
-                Generate a Personal Access Token at{" "}
+                OAuth is the default flow. Personal access token entry remains available as a fallback.
+              </p>
+              <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
+                <button
+                  className="btn btn-primary"
+                  onClick={handleConnectGithubOAuth}
+                  disabled={connecting}
+                >
+                  <GitBranch size={14} />
+                  {connecting ? "Redirecting..." : "Connect with GitHub"}
+                </button>
+              </div>
+              <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginBottom: 16, lineHeight: 1.5 }}>
+                If you prefer a token, generate a Personal Access Token at{" "}
                 <a
                   href="https://github.com/settings/tokens/new?scopes=repo"
                   target="_blank"

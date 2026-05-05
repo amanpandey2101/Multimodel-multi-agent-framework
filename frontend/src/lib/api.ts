@@ -214,6 +214,10 @@ export interface GitHubStatus {
   github_username?: string;
 }
 
+export interface GitHubOAuthUrl {
+  authorization_url: string;
+}
+
 export interface PushResult {
   commit: {
     sha: string;
@@ -231,6 +235,8 @@ export interface PushResult {
 
 export const githubApi = {
   status: () => request<GitHubStatus>("/github/status"),
+  oauthUrl: (redirectPath: string = "/dashboard/settings") =>
+    request<GitHubOAuthUrl>(`/github/oauth/url?redirect_path=${encodeURIComponent(redirectPath)}`),
   connect: (accessToken: string) =>
     request<{ connected: boolean; github_username: string }>("/github/connect", {
       method: "POST",

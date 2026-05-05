@@ -2,6 +2,7 @@
 FastAPI SaaS Backend — main application entry point.
 
 Uses Supabase for auth, database, and realtime.
+(Final reload for GitHub OAuth configuration)
 """
 
 from __future__ import annotations

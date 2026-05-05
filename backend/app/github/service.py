@@ -9,11 +9,18 @@ from __future__ import annotations
 import base64
 import logging
 from typing import Optional
+import httpx
 
 from github import Github, GithubException, InputGitTreeElement
 from backend.app.supabase_client import get_supabase
+from backend.app.config import get_settings
 
 logger = logging.getLogger(__name__)
+
+GITHUB_OAUTH_URL = "https://github.com/login/oauth/authorize"
+GITHUB_TOKEN_URL = "https://github.com/login/oauth/access_token"
+GITHUB_API_URL = "https://api.github.com"
+GITHUB_SCOPES = "repo,admin:repo_hook,read:org,user:email"
 
 
 class GitHubService:
@@ -26,6 +33,65 @@ class GitHubService:
     @property
     def username(self) -> str:
         return self.user.login
+
+    @staticmethod
+    def get_oauth_url(state: str) -> str:
+        from urllib.parse import quote
+        settings = get_settings()
+        redirect_uri = f"{settings.backend_url.rstrip('/')}/api/github/oauth/callback"
+        return (
+            f"{GITHUB_OAUTH_URL}"
+            f"?client_id={settings.github_client_id}"
+            f"&scope={GITHUB_SCOPES}"
+            f"&state={state}"
+            f"&redirect_uri={quote(redirect_uri, safe='')}"
+        )
+
+    @staticmethod
+    def exchange_code(code: str) -> dict:
+        settings = get_settings()
+        with httpx.Client(timeout=20.0) as client:
+            response = client.post(
+                GITHUB_TOKEN_URL,
+                headers={"Accept": "application/json"},
+                data={
+                    "client_id": settings.github_client_id,
+                    "client_secret": settings.github_client_secret,
+                    "code": code,
+                    "redirect_uri": f"{settings.backend_url.rstrip('/')}/api/github/oauth/callback",
+                },
+            )
+            response.raise_for_status()
+            return response.json()
+
+    @staticmethod
+    def get_user_info_from_token(access_token: str) -> dict:
+        with httpx.Client(timeout=20.0) as client:
+            user_response = client.get(
+                f"{GITHUB_API_URL}/user",
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Accept": "application/vnd.github+json",
+                },
+            )
+            user_response.raise_for_status()
+            user_data = user_response.json()
+
+            if not user_data.get("email"):
+                emails_response = client.get(
+                    f"{GITHUB_API_URL}/user/emails",
+                    headers={
+                        "Authorization": f"Bearer {access_token}",
+                        "Accept": "application/vnd.github+json",
+                    },
+                )
+                emails_response.raise_for_status()
+                emails = emails_response.json()
+                primary = next((e for e in emails if e.get("primary") and e.get("verified")), None)
+                if primary:
+                    user_data["email"] = primary.get("email")
+
+            return user_data
 
     def list_repos(self, limit: int = 30) -> list[dict]:
         """List user's repositories."""

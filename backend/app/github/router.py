@@ -6,23 +6,32 @@ from __future__ import annotations
 
 import json
 import logging
+import secrets
 from typing import Any, Optional
+from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from supabase import Client
 
 from backend.app.auth.dependencies import get_current_user
+from backend.app.config import get_settings
 from backend.app.github.service import GitHubService, get_github_service
 from backend.app.supabase_client import get_supabase_dependency
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+oauth_states: dict[str, dict[str, str]] = {}
 
 
 class ConnectGitHubRequest(BaseModel):
     access_token: str
+
+
+class GitHubOAuthStartResponse(BaseModel):
+    authorization_url: str
 
 
 class CreateRepoRequest(BaseModel):
@@ -132,6 +141,68 @@ async def connect_github(
         }
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Invalid GitHub token: {exc}")
+
+
+@router.get("/oauth/url", response_model=GitHubOAuthStartResponse)
+async def github_oauth_url(
+    redirect_path: str = Query("/dashboard/settings"),
+    user: dict = Depends(get_current_user),
+):
+    """Return a GitHub OAuth authorization URL for the authenticated user."""
+    settings = get_settings()
+    if not settings.github_client_id or not settings.github_client_secret:
+        raise HTTPException(status_code=500, detail="GitHub OAuth is not configured")
+
+    state = f"github_oauth:{secrets.token_urlsafe(32)}"
+    oauth_states[state] = {
+        "user_id": user["id"],
+        "redirect_path": redirect_path if redirect_path.startswith("/") else "/dashboard/settings",
+    }
+    return {"authorization_url": GitHubService.get_oauth_url(state)}
+
+
+@router.get("/oauth/callback")
+async def github_oauth_callback(
+    code: str = Query(...),
+    state: str = Query(...),
+    supabase: Client = Depends(get_supabase_dependency),
+):
+    """Handle GitHub OAuth callback and persist the token for the initiating user."""
+    settings = get_settings()
+    session = oauth_states.pop(state, None)
+    redirect_path = "/dashboard/settings"
+    if session:
+        redirect_path = session.get("redirect_path", redirect_path)
+
+    target_base = f"{settings.frontend_url.rstrip('/')}{redirect_path}"
+
+    def redirect_with(params: dict[str, str]) -> RedirectResponse:
+        return RedirectResponse(f"{target_base}?{urlencode(params)}")
+
+    if not session:
+        return redirect_with({"github": "error", "message": "Invalid or expired OAuth state"})
+
+    try:
+        token_data = GitHubService.exchange_code(code)
+        access_token = token_data.get("access_token")
+        if not access_token:
+            return redirect_with({"github": "error", "message": "Failed to obtain GitHub access token"})
+
+        gh_user = GitHubService.get_user_info_from_token(access_token)
+        username = gh_user.get("login")
+        if not username:
+            return redirect_with({"github": "error", "message": "Failed to fetch GitHub user"})
+
+        supabase.table("github_tokens").upsert({
+            "user_id": session["user_id"],
+            "access_token": access_token,
+            "github_username": username,
+        }).execute()
+
+        return redirect_with({"github": "connected", "username": username})
+    except Exception as exc:
+        logger.error("GitHub OAuth callback failed: %s", exc, exc_info=True)
+        return redirect_with({"github": "error", "message": str(exc)})
 
 
 @router.get("/status")

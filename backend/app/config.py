@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     anthropic_api_key: str = Field(default="", alias="ANTHROPIC_API_KEY")
     google_api_key: str = Field(default="", alias="GOOGLE_API_KEY")
     ollama_base_url: str = Field(default="http://localhost:11434", alias="OLLAMA_BASE_URL")
+    github_client_id: str = Field(default="", alias="GITHUB_CLIENT_ID")
+    github_client_secret: str = Field(default="", alias="GITHUB_CLIENT_SECRET")
 
     # App
     debug: bool = Field(default=True, alias="DEBUG")
@@ -30,6 +32,8 @@ class Settings(BaseSettings):
         alias="CORS_ORIGINS",
     )
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
+    frontend_url: str = Field(default="http://localhost:3000", alias="FRONTEND_URL")
+    backend_url: str = Field(default="http://localhost:8000", alias="BACKEND_URL")
 
     # Pipeline
     max_critic_iterations: int = Field(default=5, alias="MAX_CRITIC_ITERATIONS")
