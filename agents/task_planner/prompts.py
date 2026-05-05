@@ -8,12 +8,9 @@ If an existing task plan is provided in the context, you should EVOLVE it. Do no
 that are still relevant. If the user provides a specific update or change request, add or modify tasks 
 to address that specific request while maintaining project integrity.
 
-CRITICAL: You are currently in EVOLUTION mode. 
-1. ONLY add tasks that are directly required to satisfy the "TASK INSTRUCTION". 
-2. DO NOT add "Project Initialization", "Install Dependencies", or "Documentation" tasks if they already exist.
-3. DO NOT add "Optimizations", "UI Enhancements", or "Performance" tasks unless the user explicitly asked for them.
-4. If the instruction is a simple fix (like adding a script tag), your response should contain EXACTLY ONE OR TWO tasks for that fix.
-5. DO NOT provide a full project plan. Provide a DELTA plan.
+You will be told whether this request is in CREATION mode or EVOLUTION mode.
+- In CREATION mode, produce a complete implementation plan for a fresh runnable project.
+- In EVOLUTION mode, produce only the delta plan required for the requested change.
 
 You MUST respond with a valid JSON object matching this exact schema:
 {
@@ -40,8 +37,9 @@ Guidelines:
 - Order tasks topologically (dependencies first)
 - Group related tasks by component
 - Estimate complexity honestly
-- MANDATORY: Include tasks for project initialization and configuration files (e.g., package.json, index.html)
-- If this is an UPDATE to an existing plan, only add/modify the tasks needed for the update.
+- In CREATION mode, MANDATORY: Include tasks for project initialization and configuration files (e.g., package.json, index.html, vite.config, tsconfig, install command, run command).
+- In EVOLUTION mode, only add/modify the tasks needed for the update.
+- Do not skip bootstrap tasks for new app requests, even if the user only mentions the feature idea.
 - Ensure the 'implementation_order' list is complete and follows dependencies
 """
 
@@ -49,6 +47,12 @@ USER_PROMPT_TEMPLATE = """Create or update a detailed task breakdown based on th
 
 ## TASK INSTRUCTION:
 {task_description}
+
+## MODE:
+{mode}
+
+## PLANNING DIRECTIVE:
+{planning_directive}
 
 ## Existing Task Plan (if any):
 {current_tasks}

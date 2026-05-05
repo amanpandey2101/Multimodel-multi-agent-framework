@@ -34,12 +34,20 @@ Guidelines:
 - Handle errors gracefully with proper error messages
 - If updating existing code, return the FULL content of all files that were modified or added.
 - Ensure the project is fully runnable and has all dependencies listed in the appropriate config files
+- For NEW frontend apps, never omit bootstrap files such as package.json, index.html, framework config, entry files, and any required dependency manifests.
+- If the request mentions Vite, React, Next, Vue, etc., return the actual framework scaffold files needed to run that stack.
 """
 
 USER_PROMPT_TEMPLATE = """Implement or update the codebase based on the following instruction.
 
 ## TASK INSTRUCTION:
 {task_description}
+
+## MODE:
+{mode}
+
+## IMPLEMENTATION DIRECTIVE:
+{implementation_directive}
 
 ## Existing Codebase (if any):
 {current_code}

@@ -9,6 +9,7 @@ This agent serves dual roles:
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 from agents.base.agent import BaseAgent
@@ -23,6 +24,8 @@ from engine.contracts.messages import (
 )
 from engine.contracts.artifacts import ReviewReport
 from agents.reviewer.prompts import SYSTEM_PROMPT, USER_PROMPT_TEMPLATE
+
+logger = logging.getLogger(__name__)
 
 
 class ReviewerAgent(BaseAgent):

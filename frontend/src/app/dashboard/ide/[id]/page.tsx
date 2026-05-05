@@ -64,6 +64,9 @@ interface GeneratedFile {
   artifactId?: string;
 }
 
+const API_BASE = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api").replace(/\/$/, "");
+const PREVIEW_BASE = `${API_BASE}/proxy/3001/`;
+
 function inferLanguage(path: string): string {
   const ext = path.split(".").pop()?.toLowerCase() || "";
   const map: Record<string, string> = {
@@ -532,6 +535,7 @@ export default function IDEPage({ params }: { params: Promise<{ id: string }> })
     setIsAppRunning(true);
     setBottomPanelTab('terminal');
     setTerminalLogs(["[*] Starting provisioning..."]);
+    if ((window as any)._logInterval) clearInterval((window as any)._logInterval);
     
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -551,13 +555,17 @@ export default function IDEPage({ params }: { params: Promise<{ id: string }> })
             setTerminalLogs(data.logs);
             
             const isReady = data.logs.some((l: string) => 
+              l.includes("Local:") ||
+              l.includes("Network:") ||
+              l.includes("ready in") ||
+              l.includes("ready for connections") || 
               l.includes("http://localhost:") || 
               l.includes("ready for start up") || 
               l.includes("start worker process")
             );
 
             if (isReady && !hasSwitched) {
-              setPreviewUrl(`http://localhost:8000/api/proxy/3001/?t=${Date.now()}`);
+              setPreviewUrl(`${PREVIEW_BASE}?t=${Date.now()}`);
               setViewMode('preview');
               hasSwitched = true; 
             }

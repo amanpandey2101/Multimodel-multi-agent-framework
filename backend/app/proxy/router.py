@@ -5,6 +5,7 @@ Proxy Router — routes frontend requests to dynamically spawned agent dev serve
 from __future__ import annotations
 
 import logging
+import re
 import httpx
 from fastapi import APIRouter, Request, HTTPException, Response
 from fastapi.responses import StreamingResponse
@@ -16,6 +17,23 @@ router = APIRouter()
 
 # Use a global client to reuse connection pools
 client = httpx.AsyncClient()
+
+
+def _rewrite_vite_asset_paths(text: str, port: int) -> str:
+    proxy_prefix = f"/api/proxy/{port}"
+    path_prefixes = ("@vite", "@react-refresh", "@id", "src", "node_modules")
+
+    for asset_prefix in path_prefixes:
+        text = text.replace(f'"/{asset_prefix}', f'"{proxy_prefix}/{asset_prefix}')
+        text = text.replace(f"'/{asset_prefix}", f"'{proxy_prefix}/{asset_prefix}")
+
+    # Handle CSS url(/...) patterns that may not be caught by the simple replacements above.
+    text = re.sub(
+        rf'url\((["\']?)/({"|".join(re.escape(prefix) for prefix in path_prefixes)})',
+        rf'url(\1{proxy_prefix}/\2',
+        text,
+    )
+    return text
 
 
 @router.api_route("/{port}/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"])
@@ -54,37 +72,35 @@ async def proxy_to_port(port: int, path: str, request: Request):
 
         content = resp.content
         resp_headers = dict(resp.headers)
-        
-        # Inject <base> tag and rewrite absolute paths for HTML responses
-        if "text/html" in resp_headers.get("Content-Type", "").lower():
-            html_text = content.decode("utf-8", errors="ignore")
-            
-            # Inject base tag
-            base_tag = f'<base href="/api/proxy/{port}/">'
-            if "<head>" in html_text:
-                html_text = html_text.replace("<head>", f"<head>{base_tag}")
+
+        # httpx headers are case-insensitive, but once copied into a plain dict
+        # we need to handle the common lowercase form explicitly.
+        content_type = (
+            resp.headers.get("content-type")
+            or resp.headers.get("Content-Type")
+            or resp_headers.get("content-type")
+            or resp_headers.get("Content-Type")
+            or ""
+        ).lower()
+
+        # Rewrite HTML and JS module responses so Vite asset URLs stay under the proxy prefix.
+        if any(token in content_type for token in ("text/html", "javascript", "ecmascript", "text/css")):
+            text = content.decode("utf-8", errors="ignore")
+
+            if "text/html" in content_type:
+                # Inject base tag
+                base_tag = f'<base href="/api/proxy/{port}/">'
+                if "<head>" in text:
+                    text = text.replace("<head>", f"<head>{base_tag}")
+                else:
+                    text = text.replace("<html>", f"<html><head>{base_tag}</head>")
+
+            text = _rewrite_vite_asset_paths(text, port)
+            content = text.encode("utf-8")
+            if "content-length" in resp_headers:
+                resp_headers["content-length"] = str(len(content))
             else:
-                html_text = html_text.replace("<html>", f"<html><head>{base_tag}</head>")
-            
-            # Rewrite common absolute paths to relative using regex
-            # This covers src="/...", href="/...", and import "/..." or from "/..."
-            import re
-            
-            # Pattern to match absolute paths starting with /, excluding the proxy path itself
-            # We look for paths starting with /@vite, /src, /node_modules, /@react-refresh
-            patterns = [
-                (r'src="/(@vite|src|node_modules|@react-refresh)', r'src="./\1'),
-                (r'href="/(@vite|src|node_modules|@react-refresh)', r'href="./\1'),
-                (r'from "/(@vite|src|node_modules|@react-refresh)', r'from "./\1'),
-                (r'import "/(@vite|src|node_modules|@react-refresh)', r'import "./\1'),
-                (r'url\("/(@vite|src|node_modules|@react-refresh)', r'url\("./\1'),
-            ]
-            
-            for pattern, replacement in patterns:
-                html_text = re.sub(pattern, replacement, html_text)
-                
-            content = html_text.encode("utf-8")
-            resp_headers["Content-Length"] = str(len(content))
+                resp_headers["Content-Length"] = str(len(content))
 
         return Response(
             content=content,

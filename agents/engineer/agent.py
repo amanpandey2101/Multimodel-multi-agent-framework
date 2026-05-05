@@ -23,6 +23,8 @@ class EngineerAgent(BaseAgent):
 
     def build_prompt(self, request: AgentRequest) -> list[Message]:
         feedback_section = self._format_feedback(request, FEEDBACK_SECTION)
+        mode = str((request.constraints or {}).get("mode", "creation")).lower()
+        is_update = bool((request.constraints or {}).get("is_update")) or mode == "evolution"
 
         requirements = json.dumps(
             request.context_artifacts.get("requirements", {}), indent=2
@@ -45,6 +47,12 @@ class EngineerAgent(BaseAgent):
             requirements=requirements,
             current_code=implementation,
             constraints=constraints_str,
+            mode=mode,
+            implementation_directive=(
+                "Modify the existing project in place. Return the full contents of every changed or added file only."
+                if is_update
+                else "Create a complete runnable project scaffold. Include every required source, config, and dependency file."
+            ),
             feedback_section=feedback_section,
         )
 

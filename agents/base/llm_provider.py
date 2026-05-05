@@ -26,6 +26,31 @@ from typing import Any, AsyncIterator, Optional
 logger = logging.getLogger(__name__)
 
 
+MODEL_MAX_OUTPUT_TOKENS: dict[str, int] = {
+    "gpt-4o-mini": 16_384,
+    "gpt-4o": 16_384,
+    "gpt-4.1-mini": 32_768,
+    "gpt-5-mini": 128_000,
+    "gpt-5": 128_000,
+}
+
+
+def _resolve_max_output_tokens(model: str, requested: int) -> int:
+    lowered = model.lower()
+
+    for prefix, limit in MODEL_MAX_OUTPUT_TOKENS.items():
+        if lowered.startswith(prefix):
+            return min(requested, limit)
+
+    if any(token in lowered for token in ("mini", "haiku", "flash", "nano")):
+        return min(requested, 16_384)
+
+    if any(token in lowered for token in ("gpt-5", "o1", "o2", "o3")):
+        return min(requested, 128_000)
+
+    return min(requested, 32_768)
+
+
 # ---------------------------------------------------------------------------
 # Data Classes
 # ---------------------------------------------------------------------------
@@ -132,6 +157,52 @@ class OpenAIProvider(LLMProvider):
             kwargs["base_url"] = base_url
         self._client = AsyncOpenAI(**kwargs)
 
+    @staticmethod
+    def _is_reasoning_series(model: str) -> bool:
+        lowered = model.lower()
+        return any(token in lowered for token in ("o1", "o2", "o3", "gpt-5"))
+
+    @staticmethod
+    def _normalize_chat_content(content: Any) -> str:
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            parts: list[str] = []
+            for item in content:
+                if isinstance(item, str):
+                    parts.append(item)
+                elif isinstance(item, dict):
+                    if isinstance(item.get("text"), str):
+                        parts.append(item["text"])
+                    elif item.get("type") == "text" and isinstance(item.get("content"), str):
+                        parts.append(item["content"])
+                else:
+                    text = getattr(item, "text", None)
+                    if isinstance(text, str):
+                        parts.append(text)
+            return "".join(parts)
+        return ""
+
+    def _build_chat_messages(
+        self,
+        messages: list[Message],
+        *,
+        prefer_developer_role: bool,
+    ) -> list[dict[str, Any]]:
+        api_messages: list[dict[str, Any]] = []
+        for m in messages:
+            role = m.role
+            if role == "system" and prefer_developer_role:
+                role = "developer"
+
+            msg: dict[str, Any] = {"role": role, "content": m.content}
+            if m.tool_calls:
+                msg["tool_calls"] = m.tool_calls
+            if m.tool_call_id:
+                msg["tool_call_id"] = m.tool_call_id
+            api_messages.append(msg)
+        return api_messages
+
     async def generate(
         self,
         messages: list[Message],
@@ -145,41 +216,34 @@ class OpenAIProvider(LLMProvider):
     ) -> LLMResponse:
         model = model or self.default_model
         start = time.perf_counter_ns()
+        effective_max_tokens = _resolve_max_output_tokens(model, max_tokens)
+        effective_max_tokens = _resolve_max_output_tokens(model, max_tokens)
+        if effective_max_tokens != max_tokens:
+            logger.info(
+                "Capping max output tokens for model %s from %d to %d",
+                model,
+                max_tokens,
+                effective_max_tokens,
+            )
 
-        # Broaden check for newer models (o1, o3, gpt-5, etc.)
-        is_new_series = any(p in model.lower() for p in ["o1", "o3", "gpt-5", "o2"])
+        is_reasoning_series = self._is_reasoning_series(model)
 
-        api_messages = []
-        for m in messages:
-            role = m.role
-            if role == "system" and is_new_series:
-                role = "developer"
-            
-            msg: dict[str, Any] = {"role": role, "content": m.content}
-            if m.tool_calls:
-                msg["tool_calls"] = m.tool_calls
-            if m.tool_call_id:
-                msg["tool_call_id"] = m.tool_call_id
-            api_messages.append(msg)
-
-        kwargs: dict[str, Any] = {
-            "model": model,
-            "messages": api_messages,
-        }
-        
-        if is_new_series:
-            kwargs["max_completion_tokens"] = max_tokens
+        kwargs: dict[str, Any] = {"model": model}
+        if is_reasoning_series:
+            kwargs["max_completion_tokens"] = effective_max_tokens
         else:
-            kwargs["max_tokens"] = max_tokens
+            kwargs["max_tokens"] = effective_max_tokens
             kwargs["temperature"] = temperature
-            if response_format:
-                kwargs["response_format"] = response_format
+
+        if response_format:
+            kwargs["response_format"] = response_format
 
         if stop:
             kwargs["stop"] = stop
         if tools:
             kwargs["tools"] = tools
 
+        kwargs["messages"] = self._build_chat_messages(messages, prefer_developer_role=is_reasoning_series)
         response = await self._client.chat.completions.create(**kwargs)
         latency = int((time.perf_counter_ns() - start) / 1_000_000)
 
@@ -188,8 +252,22 @@ class OpenAIProvider(LLMProvider):
 
         # Handle refusals (common in o1/gpt-5)
         refusal = getattr(choice.message, 'refusal', None)
-        content = choice.message.content or ""
-        
+        content = self._normalize_chat_content(choice.message.content)
+
+        if not content and not refusal and not getattr(choice.message, "tool_calls", None):
+            logger.warning(
+                "OpenAI chat completion returned empty content for model %s; retrying with system role fallback",
+                model,
+            )
+            retry_kwargs = dict(kwargs)
+            retry_kwargs["messages"] = self._build_chat_messages(messages, prefer_developer_role=False)
+            retry_response = await self._client.chat.completions.create(**retry_kwargs)
+            choice = retry_response.choices[0]
+            usage = retry_response.usage
+            refusal = getattr(choice.message, "refusal", None)
+            content = self._normalize_chat_content(choice.message.content)
+            response = retry_response
+
         if refusal and not content:
             content = f"REFUSAL: {refusal}"
 
@@ -229,18 +307,20 @@ class OpenAIProvider(LLMProvider):
         stop: Optional[list[str]] = None,
     ) -> AsyncIterator[str]:
         model = model or self.default_model
+        effective_max_tokens = _resolve_max_output_tokens(model, max_tokens)
         kwargs: dict[str, Any] = {
             "model": model,
-            "messages": [{"role": m.role, "content": m.content} for m in messages],
             "stop": stop,
             "stream": True,
         }
         
-        is_new_series = any(model.startswith(p) for p in ["o1", "o3", "gpt-5", "o2"])
-        if is_new_series:
-            kwargs["max_completion_tokens"] = max_tokens
+        is_reasoning_series = self._is_reasoning_series(model)
+        kwargs["messages"] = self._build_chat_messages(messages, prefer_developer_role=is_reasoning_series)
+
+        if is_reasoning_series:
+            kwargs["max_completion_tokens"] = effective_max_tokens
         else:
-            kwargs["max_tokens"] = max_tokens
+            kwargs["max_tokens"] = effective_max_tokens
             kwargs["temperature"] = temperature
 
         stream = await self._client.chat.completions.create(**kwargs)
@@ -310,6 +390,7 @@ class OllamaProvider(LLMProvider):
     ) -> LLMResponse:
         model = model or self.default_model
         start = time.perf_counter_ns()
+        effective_max_tokens = _resolve_max_output_tokens(model, max_tokens)
 
         api_messages = []
         for m in messages:
@@ -324,7 +405,7 @@ class OllamaProvider(LLMProvider):
             "model": model,
             "messages": api_messages,
             "temperature": temperature,
-            "max_tokens": max_tokens,
+            "max_tokens": effective_max_tokens,
         }
         if response_format:
             kwargs["response_format"] = response_format
@@ -375,11 +456,12 @@ class OllamaProvider(LLMProvider):
         stop: Optional[list[str]] = None,
     ) -> AsyncIterator[str]:
         model = model or self.default_model
+        effective_max_tokens = _resolve_max_output_tokens(model, max_tokens)
         stream = await self._client.chat.completions.create(
             model=model,
             messages=[{"role": m.role, "content": m.content} for m in messages],
             temperature=temperature,
-            max_tokens=max_tokens,
+            max_tokens=effective_max_tokens,
             stop=stop,
             stream=True,
         )
@@ -468,7 +550,7 @@ class AnthropicProvider(LLMProvider):
         kwargs: dict[str, Any] = {
             "model": model,
             "messages": chat_msgs,
-            "max_tokens": max_tokens,
+            "max_tokens": effective_max_tokens,
             "temperature": temperature,
         }
         if system_msg:
@@ -533,6 +615,7 @@ class AnthropicProvider(LLMProvider):
         stop: Optional[list[str]] = None,
     ) -> AsyncIterator[str]:
         model = model or self.default_model
+        effective_max_tokens = _resolve_max_output_tokens(model, max_tokens)
 
         system_msg = ""
         chat_msgs: list[dict[str, str]] = []
@@ -545,7 +628,7 @@ class AnthropicProvider(LLMProvider):
         kwargs: dict[str, Any] = {
             "model": model,
             "messages": chat_msgs,
-            "max_tokens": max_tokens,
+            "max_tokens": effective_max_tokens,
             "temperature": temperature,
         }
         if system_msg:
@@ -610,6 +693,7 @@ class GoogleProvider(LLMProvider):
     ) -> LLMResponse:
         model_name = model or self.default_model
         start = time.perf_counter_ns()
+        effective_max_tokens = _resolve_max_output_tokens(model_name, max_tokens)
 
         gen_model = self._genai.GenerativeModel(model_name)
 
@@ -626,7 +710,7 @@ class GoogleProvider(LLMProvider):
 
         generation_config = {
             "temperature": temperature,
-            "max_output_tokens": max_tokens,
+            "max_output_tokens": effective_max_tokens,
         }
         if stop:
             generation_config["stop_sequences"] = stop
@@ -666,6 +750,7 @@ class GoogleProvider(LLMProvider):
         stop: Optional[list[str]] = None,
     ) -> AsyncIterator[str]:
         model_name = model or self.default_model
+        effective_max_tokens = _resolve_max_output_tokens(model_name, max_tokens)
 
         system_instruction = ""
         parts: list[dict[str, str]] = []
@@ -679,7 +764,7 @@ class GoogleProvider(LLMProvider):
 
         generation_config = {
             "temperature": temperature,
-            "max_output_tokens": max_tokens,
+            "max_output_tokens": effective_max_tokens,
         }
         if stop:
             generation_config["stop_sequences"] = stop

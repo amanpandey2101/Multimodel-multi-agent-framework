@@ -5,6 +5,7 @@ import shutil
 import logging
 import asyncio
 import traceback
+import json
 from pathlib import Path
 import concurrent.futures
 from typing import Dict, Optional, Any
@@ -22,6 +23,56 @@ execution_logs: Dict[str, list] = {}
 
 RUN_APPS_DIR = Path("run_apps")
 RUN_APPS_DIR.mkdir(exist_ok=True)
+
+
+def _docker_compose_command() -> list[str]:
+    if shutil.which("docker-compose"):
+        return ["docker-compose"]
+    return ["docker", "compose"]
+
+
+def _inject_debug_script(path: str, file_content: str) -> str:
+    if path != "index.html":
+        return file_content
+    debug_script = """<script>
+window.onerror = function(msg, url, line, col, error) {
+  document.body.innerHTML = '<div style="color:red;padding:20px;font-family:sans-serif;"><h1>Runtime Error</h1><pre>' + msg + '\\n' + url + ':' + line + '</pre></div>';
+  return false;
+};
+window.onunhandledrejection = function(event) {
+  document.body.innerHTML = '<div style="color:red;padding:20px;font-family:sans-serif;"><h1>Promise Rejection</h1><pre>' + event.reason + '</pre></div>';
+};
+</script>"""
+    if "</head>" in file_content:
+        return file_content.replace("</head>", f"{debug_script}</head>")
+    if "<body>" in file_content:
+        return file_content.replace("<body>", f"<body>{debug_script}")
+    return file_content
+
+
+def _ensure_runtime_scaffold(app_dir: Path, logs: list[str]) -> None:
+    package_json_path = app_dir / "package.json"
+    if not package_json_path.exists():
+        logs.append("[*] package.json missing. Creating fallback Vite scaffold manifest.")
+        package_json_path.write_text(json.dumps({
+            "name": "generated-app",
+            "private": True,
+            "version": "0.1.0",
+            "type": "module",
+            "scripts": {
+                "dev": "vite",
+                "build": "vite build",
+                "preview": "vite preview --host 0.0.0.0 --port 3001",
+            },
+            "dependencies": {
+                "react": "^18.3.1",
+                "react-dom": "^18.3.1",
+            },
+            "devDependencies": {
+                "@vitejs/plugin-react": "^4.3.1",
+                "vite": "^5.4.10",
+            },
+        }, indent=2), encoding="utf-8")
 
 async def run_app_task(pipeline_id: str):
     """Background task to provision and run the app in a Docker container."""
@@ -60,48 +111,18 @@ async def run_app_task(pipeline_id: str):
                     if path and file_content:
                         file_path = app_dir / path
                         file_path.parent.mkdir(parents=True, exist_ok=True)
-                        # Inject debug script into index.html for on-screen error reporting
-                        if path == "index.html":
-                            debug_script = """<script>
-        window.onerror = function(msg, url, line, col, error) {
-            document.body.innerHTML = '<div style="color:red;padding:20px;font-family:sans-serif;"><h1>Runtime Error</h1><pre>' + msg + '\\n' + url + ':' + line + '</pre></div>';
-            return false;
-        };
-        window.onunhandledrejection = function(event) {
-            document.body.innerHTML = '<div style="color:red;padding:20px;font-family:sans-serif;"><h1>Promise Rejection</h1><pre>' + event.reason + '</pre></div>';
-        };
-    </script>"""
-                            if "</head>" in file_content:
-                                file_content = file_content.replace("</head>", f"{debug_script}</head>")
-                            elif "<body>" in file_content:
-                                file_content = file_content.replace("<body>", f"<body>{debug_script}")
-
                         with open(file_path, "w", encoding="utf-8") as f_out:
-                            f_out.write(file_content)
+                            f_out.write(_inject_debug_script(path, file_content))
             elif isinstance(content, dict):
                 # Handle legacy flat format
                 for path, file_content in content.items():
                     if isinstance(file_content, str) and path not in ["dockerfile", "docker_compose"]:
                         file_path = app_dir / path
                         file_path.parent.mkdir(parents=True, exist_ok=True)
-                        # Inject debug script into index.html for on-screen error reporting
-                        if path == "index.html":
-                            debug_script = """<script>
-        window.onerror = function(msg, url, line, col, error) {
-            document.body.innerHTML = '<div style="color:red;padding:20px;font-family:sans-serif;"><h1>Runtime Error</h1><pre>' + msg + '\\n' + url + ':' + line + '</pre></div>';
-            return false;
-        };
-        window.onunhandledrejection = function(event) {
-            document.body.innerHTML = '<div style="color:red;padding:20px;font-family:sans-serif;"><h1>Promise Rejection</h1><pre>' + event.reason + '</pre></div>';
-        };
-    </script>"""
-                            if "</head>" in file_content:
-                                file_content = file_content.replace("</head>", f"{debug_script}</head>")
-                            elif "<body>" in file_content:
-                                file_content = file_content.replace("<body>", f"<body>{debug_script}")
-
                         with open(file_path, "w", encoding="utf-8") as f_out:
-                            f_out.write(file_content)
+                            f_out.write(_inject_debug_script(path, file_content))
+
+        _ensure_runtime_scaffold(app_dir, execution_logs[pipeline_id])
         
         # 3. Ensure Dockerfile and docker-compose exist (Optimized for IDE Preview)
         # We use a development-focused Dockerfile for the IDE preview to avoid 
@@ -142,15 +163,16 @@ async def run_app_task(pipeline_id: str):
 
         # 4. Run Docker Compose
         execution_logs[pipeline_id].append("[*] Building and starting containers (this may take a minute)...")
+        execution_logs[pipeline_id].append("[*] Preview will be available via /api/proxy/3001/ once Vite is ready.")
         
         # We use --build to ensure fresh code is used
+        compose_cmd = _docker_compose_command()
         process = subprocess.Popen(
-            ["docker-compose", "up", "--build"],
+            [*compose_cmd, "up", "--build"],
             cwd=str(app_dir),
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
-            shell=True,
             bufsize=1,
             universal_newlines=True
         )
@@ -178,7 +200,7 @@ async def start_app(pipeline_id: str, background_tasks: BackgroundTasks):
     app_dir = RUN_APPS_DIR / pipeline_id
     if pipeline_id in running_processes:
         # Kill existing and cleanup
-        subprocess.run(["docker-compose", "down"], cwd=app_dir, shell=True)
+        subprocess.run([*_docker_compose_command(), "down"], cwd=app_dir)
         try:
             running_processes[pipeline_id].terminate()
         except:
@@ -199,7 +221,7 @@ async def stop_app(pipeline_id: str):
     app_dir = RUN_APPS_DIR / pipeline_id
     if pipeline_id in running_processes:
         # Run docker-compose down to cleanup
-        subprocess.run(["docker-compose", "down"], cwd=app_dir, shell=True)
+        subprocess.run([*_docker_compose_command(), "down"], cwd=app_dir)
         try:
             running_processes[pipeline_id].terminate()
         except:

@@ -22,7 +22,7 @@ class PipelineCreate(BaseModel):
     llm_provider: str = "openai"
     llm_model: str = ""
     enable_critic: bool = True
-    max_iterations: int = 5
+    max_iterations: int = 2
     mode: str = "planning"
     
 class PipelineMessage(BaseModel):
@@ -304,8 +304,8 @@ async def retry_pipeline(
     
     # Upgrade iteration limit if it's old/low
     config = pipe.data.get("config", {})
-    if config.get("max_iterations", 0) < 5:
-        config["max_iterations"] = 5
+    if config.get("max_iterations", 0) < 2:
+        config["max_iterations"] = 2
 
     # Reset pipeline status and update config
     supabase.table("pipelines").update({
