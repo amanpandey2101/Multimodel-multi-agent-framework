@@ -33,6 +33,9 @@ class EngineerAgent(BaseAgent):
         task_breakdown = json.dumps(
             request.context_artifacts.get("task_breakdown", {}), indent=2
         )
+        implementation = json.dumps(
+            request.context_artifacts.get("implementation", {}), indent=2
+        )
         constraints_str = json.dumps(request.constraints, indent=2) if request.constraints else "None"
 
         user_prompt = USER_PROMPT_TEMPLATE.format(
@@ -40,6 +43,7 @@ class EngineerAgent(BaseAgent):
             architecture=architecture,
             task_breakdown=task_breakdown,
             requirements=requirements,
+            current_code=implementation,
             constraints=constraints_str,
             feedback_section=feedback_section,
         )
@@ -56,4 +60,7 @@ class EngineerAgent(BaseAgent):
         return 0.2  # Code generation should be deterministic
 
     def _max_tokens(self) -> int:
-        return 8192  # Code outputs tend to be longer
+        return 100000  # Maximum capacity (1 Lakh) for state-of-the-art reasoning models
+
+
+

@@ -50,7 +50,7 @@ Guidelines:
 - Define clear API contracts between components
 - Consider scalability from the start
 - Address security at the architectural level
-- Keep it practical and implementable
+- Explicitly mention all required configuration and environment files in the components description (e.g., package.json, requirements.txt, tsconfig.json, .env.example)
 """
 
 USER_PROMPT_TEMPLATE = """Design a system architecture based on these requirements.

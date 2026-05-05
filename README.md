@@ -433,14 +433,19 @@ Options:
   -v, --verbose
 ```
 
-### `cli/` — Interactive TUI (Node.js)
+### `frontend/` — Next-Gen Web IDE Dashboard (Next.js)
 
-The platform provides a `Claude Code`-like interactive terminal user interface built with React and Ink. It uses real-time WebSockets to stream events directly from the Supabase database.
+The platform includes a high-fidelity, professional-grade Web IDE dashboard that provides a unified workspace for multi-agent software engineering.
+
+- **Integrated IDE**: VS Code-style workspace with an Activity Bar, File Explorer, and Monaco Code Editor.
+- **Interactive Chat**: Multi-turn conversation with the agent team, featuring Markdown support and real-time step visualization.
+- **Live Preview Runner**: A backend execution engine that provisions local environments, installs dependencies, and launches your application with a live terminal output.
+- **Project Management**: Global overview of pipelines, artifacts, and team coordination.
 
 ```bash
-cd cli
-npm install
-npm run dev
+cd frontend
+yarn install
+yarn dev
 ```
 
 ---

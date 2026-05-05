@@ -165,6 +165,10 @@ export const pipelinesApi = {
   get: (id: string) => request<Pipeline>(`/pipelines/${id}`),
   cancel: (id: string) =>
     request<{ message: string }>(`/pipelines/${id}/cancel`, { method: "POST" }),
+  retry: (id: string) =>
+    request<{ message: string }>(`/pipelines/${id}/retry`, { method: "POST" }),
+  delete: (id: string) =>
+    request<void>(`/pipelines/${id}`, { method: "DELETE" }),
 };
 
 // ─── Artifacts ────────────────────────────
@@ -184,6 +188,11 @@ export const artifactsApi = {
   get: (id: string) => request<Artifact>(`/artifacts/${id}`),
   listByStage: (pipelineId: string, stageName: string) =>
     request<Artifact[]>(`/artifacts/pipeline/${pipelineId}/stage/${stageName}`),
+  update: (id: string, content: Record<string, unknown>) =>
+    request<{ message: string }>(`/artifacts/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(content),
+    }),
 };
 
 // ─── GitHub ───────────────────────────────

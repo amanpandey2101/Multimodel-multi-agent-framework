@@ -2,6 +2,7 @@
 
 import { useEffect, useState, use } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   projectsApi,
   pipelinesApi,
@@ -22,6 +23,7 @@ import {
   Brain,
   Rocket,
   X,
+  Trash2,
 } from "lucide-react";
 
 export default function ProjectDetailPage({
@@ -41,6 +43,11 @@ export default function ProjectDetailPage({
   const [model, setModel] = useState("");
   const [mode, setMode] = useState("planning");
   const [creating, setCreating] = useState(false);
+
+  const [showDelete, setShowDelete] = useState(false);
+  const [deleteKeyword, setDeleteKeyword] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const router = useRouter();
 
   // GitHub status
   const [ghStatus, setGhStatus] = useState<GitHubStatus | null>(null);
@@ -139,8 +146,49 @@ export default function ProjectDetailPage({
             <Plus size={16} strokeWidth={2.5} />
             New Pipeline
           </button>
+          <button className="btn btn-danger" style={{ background: "transparent", border: "1px solid var(--error)", color: "var(--error)" }} onClick={() => setShowDelete(true)}>
+            <Trash2 size={16} />
+          </button>
         </div>
       </div>
+
+      {showDelete && (
+        <div className="modal-overlay" onClick={() => setShowDelete(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h2 className="modal-title">Delete Project</h2>
+            <p className="modal-description">
+              This action cannot be undone. To confirm, type <strong>delete</strong> below.
+            </p>
+            <div className="form-group">
+              <input
+                className="form-input"
+                value={deleteKeyword}
+                onChange={(e) => setDeleteKeyword(e.target.value)}
+                placeholder="delete"
+              />
+            </div>
+            <div className="modal-actions">
+              <button className="btn btn-ghost" onClick={() => setShowDelete(false)}>Cancel</button>
+              <button
+                className="btn btn-danger"
+                disabled={deleteKeyword !== "delete" || deleting}
+                onClick={async () => {
+                  setDeleting(true);
+                  try {
+                    await projectsApi.delete(id);
+                    router.push("/dashboard/projects");
+                  } catch (e) {
+                    console.error(e);
+                    setDeleting(false);
+                  }
+                }}
+              >
+                {deleting ? "Deleting..." : "Delete Project"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Stats */}
       <div className="stats-grid" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>

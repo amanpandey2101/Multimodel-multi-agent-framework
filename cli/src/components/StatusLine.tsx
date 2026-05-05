@@ -2,7 +2,7 @@
 // Shows current screen context + key hints.
 import React from 'react'
 import { Box, Text, useStdout } from 'ink'
-import type { Screen } from '../types.js'
+import type { Screen } from '../types'
 
 type Props = {
   screen: Screen
@@ -13,11 +13,12 @@ type Props = {
 const HINTS: Record<Screen['type'], string> = {
   splash:       '',
   login:        'Tab to switch field · Enter to submit',
-  projects:     'n  new project · Enter  open · ?  help · q  quit',
+  projects:     'c  chat agent · n  new project · Enter  open · ?  help · q  quit',
   pipelines:    'n  new pipeline · Enter  watch · Esc  back · q  quit',
   'new-pipeline': 'Tab  next field · Enter  confirm · Esc  cancel',
   watch:        'q  back',
   help:         'Esc  back',
+  chat:         'Esc  menu · /help  commands · /clear  reset',
 }
 
 export function StatusLine({ screen, userEmail, error }: Props): React.ReactNode {

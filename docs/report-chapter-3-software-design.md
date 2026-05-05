@@ -4,18 +4,17 @@
 
 The following diagram illustrates the high-level data flow between the user and the platform components.
 
-```mermaid
 graph LR
     User((User)) -- Submit Goal/Query --> CLI[Terminal CLI]
     CLI -- API Request / WebSocket --> Backend[FastAPI Backend]
     Backend -- Fetch Context --> DB[(Supabase DB)]
-    Backend -- Execute --> Engine[Orchestration Engine]
+    Backend -- Orchestrate --> Engine[Orchestration Engine]
     Engine -- Prompt --> LLM[LLM Provider]
     LLM -- Response/Tool Call --> Engine
-    Engine -- Tool Execution --> Tools[Filesystem/Shell]
-    Tools -- Results --> Engine
+    Engine -- Tool Execution --> Sandbox[Docker Sandbox]
+    Sandbox -- Results --> Engine
     Engine -- Progress Events --> CLI
-```
+    Sandbox -- Live Preview --> Browser[IDE Preview]
 
 ## 3.2 UML Diagrams
 

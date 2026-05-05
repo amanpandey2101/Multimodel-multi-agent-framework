@@ -6,7 +6,9 @@ The **"AN AUTONOMOUS MULTI-AGENT MULTI MODEL FRAMEWORK FOR END-TO-END SOFTWARE D
 
 Key accomplishments include:
 - A dependency-aware task execution engine (DAG-based).
-- A safe, workspace-bound tool library for filesystem and shell operations.
+- A safe, production-grade **Docker-isolated runtime** for sandboxed execution.
+- A high-fidelity **Integrated Web IDE** with real-time sync, "Surgical Code Evolution," and live containerized previews.
+- **On-Screen Diagnostic Infrastructure**: Real-time error reporting and smart path rewriting for stable remote previewing.
 - A streaming terminal interface built with React Ink.
 - Multi-provider LLM support with built-in cost tracking.
 
@@ -14,7 +16,7 @@ Key accomplishments include:
 
 While the current platform is robust, several areas are identified for future expansion:
 - **Long-term Memory Persistence**: Implementing vector databases (like ChromaDB) for project-wide semantic search.
-- **Enhanced Sandboxing**: Support for Docker-based tool execution to provide 100% isolated environments for untrusted code execution.
+- **Automated CI/CD Pipelines**: Enabling agents to automatically configure and trigger GitHub Actions or GitLab CI.
 - **Agent Self-Improvement**: Allowing agents to create and refine their own tools over the course of a project.
 
 ---

@@ -1,8 +1,8 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react'
+import React, { useEffect, useState, useCallback } from 'react'
 import { Box, Text, useInput } from 'ink'
-import { Spinner } from '../components/Spinner.js'
-import * as api from '../api.js'
-import type { Project, Screen } from '../types.js'
+import { Spinner } from '../components/Spinner'
+import * as api from '../api'
+import type { Project, Screen } from '../types'
 
 type Props = {
   onNavigate: (s: Screen) => void
@@ -55,6 +55,10 @@ export function ProjectsScreen({ onNavigate, onError }: Props): React.ReactNode 
     if (_input === '?') {
       onNavigate({ type: 'help' })
     }
+    // 'c' opens the local coding agent chat
+    if (_input === 'c' || _input === 'C') {
+      onNavigate({ type: 'chat' })
+    }
   })
 
   // Pagination for long lists
@@ -72,6 +76,13 @@ export function ProjectsScreen({ onNavigate, onError }: Props): React.ReactNode 
 
   return (
     <Box flexDirection="column" paddingX={2} paddingY={1}>
+      <Box marginBottom={1} paddingX={1} borderStyle="round" borderColor="magenta">
+        <Text bold color="magenta">◈ </Text>
+        <Text>Press </Text>
+        <Text bold color="cyan">c</Text>
+        <Text> to open the local coding agent (Claude Code style)</Text>
+      </Box>
+
       <Text bold color="magenta">Projects</Text>
       
       <Box marginTop={1} flexDirection="column">

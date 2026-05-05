@@ -10,10 +10,12 @@ The platform must satisfy the following core requirements:
 3.  **Tool Execution System**: Agents must be able to call tools for reading/writing files, running shell commands, and searching directories.
 4.  **Shared Memory**: A namespaced key-value store for agents to persist and share context across tasks.
 5.  **Real-time Monitoring**: Real-time streaming of agent thoughts and tool outputs to a terminal UI.
-6.  **Web Dashboard**: A centralized web interface for project visualization, historical pipeline analysis, and artifact management.
+6.  **Web Dashboard**: A centralized web interface for project visualization and historical pipeline analysis.
+7.  **Interactive Web IDE**: A high-fidelity development environment with real-time code sync, Monaco editor, and live preview.
+8.  **Automated Execution**: One-click provisioning of development environments and servers for generated code.
 
 ### Non-Functional Requirements
-1.  **Security**: Tool execution (especially bash) must be sandboxed or restricted to a specific workspace directory.
+1.  **Security**: Tool execution and application runtimes MUST be isolated via **Docker Containerization** to protect the host OS.
 2.  **Scalability**: The engine must support parallel task execution with configurable concurrency limits.
 3.  **Extensibility**: Developers should be able to register custom tools and agent roles easily.
 
@@ -34,6 +36,7 @@ The system architecture is divided into the **Core Engine** and the **User Inter
 | **Agent Pool** | A registry of specialized agents (Architect, Dev, etc.) that power the core logic. |
 | **Tool System** | A library of validated functions (Bash, File I/O) invoked by the core engine. |
 | **Backend API** | A FastAPI server that exposes the core framework to external clients. |
+| **Execution Runner** | A dedicated service for provisioning and managing Docker-based application runtimes. |
 
 ### Interface Modules (Built on Top)
 | Module | Description |
@@ -45,7 +48,7 @@ The system architecture is divided into the **Core Engine** and the **User Inter
 
 - **Coordinator Agent**: Acts as the "manager". Analyzes the goal, identifies dependencies, and assigns tasks to workers.
 - **Task Queue**: Dynamically unblocks tasks as their dependencies (parent nodes in the DAG) are satisfied.
-- **Bash Tool**: Safely executes shell commands on the host system with timeout protection and workspace isolation.
+- **Bash Tool**: Executes shell commands within an isolated Docker container with timeout protection and workspace sandboxing.
 - **Web Dashboard**: Renders interactive DFDs and provides an artifact explorer for downloaded project outputs.
 
 ## 2.5 Use Case Scenario (Sample)

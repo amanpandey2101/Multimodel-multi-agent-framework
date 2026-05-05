@@ -1,10 +1,10 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { Box, Text, useInput } from 'ink'
 import { createClient, type RealtimeChannel } from '@supabase/supabase-js'
-import { Spinner } from '../components/Spinner.js'
-import { PipelineStages } from '../components/PipelineStages.js'
-import * as api from '../api.js'
-import type { Pipeline, Screen } from '../types.js'
+import { Spinner } from '../components/Spinner'
+import { PipelineStages } from '../components/PipelineStages'
+import * as api from '../api'
+import type { Pipeline, Screen } from '../types'
 
 type Props = {
   pipelineId: string

@@ -40,7 +40,7 @@ class CriticLoopController:
         )
     """
 
-    def __init__(self, max_iterations: int = 3, enable: bool = True):
+    def __init__(self, max_iterations: int = 5, enable: bool = True):
         self.max_iterations = max_iterations
         self.enable = enable
         self._iteration_log: list[dict[str, Any]] = []

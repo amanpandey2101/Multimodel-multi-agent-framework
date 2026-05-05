@@ -31,6 +31,26 @@ from agents.base.llm_provider import LLMProvider, LLMResponse, Message
 
 logger = logging.getLogger(__name__)
 
+def _emit_agent_event(
+    pipeline_id: str,
+    event_type: str,
+    message: str,
+    stage: str = "",
+    data: dict[str, Any] | None = None,
+) -> None:
+    try:
+        from backend.app.supabase_client import get_supabase
+        supabase = get_supabase()
+        supabase.table("pipeline_events").insert({
+            "pipeline_id": pipeline_id,
+            "event_type": event_type,
+            "stage": stage,
+            "message": message,
+            "data": data or {},
+        }).execute()
+    except Exception as exc:
+        logger.warning("Failed to emit agent event: %s", exc)
+
 
 class BaseAgent(ABC):
     """
@@ -131,6 +151,20 @@ class BaseAgent(ABC):
                 execution_time_ms=elapsed,
                 iteration=request.iteration,
             )
+
+        if request and request.pipeline_id and llm_response.content and llm_response.content.strip():
+            # Extract text before any markdown blocks (likely JSON/artifacts)
+            thought_text = llm_response.content.strip()
+            if "```" in thought_text:
+                thought_text = thought_text.split("```")[0].strip()
+            
+            if thought_text:
+                _emit_agent_event(
+                    pipeline_id=request.pipeline_id,
+                    event_type="thought",
+                    message=thought_text,
+                    stage=request.stage,
+                )
 
         # Tool-use conversation loop
         if self._has_tools() and llm_response.tool_calls:
@@ -298,6 +332,15 @@ class BaseAgent(ABC):
 
                 logger.info("[%s] Tool call: %s(%s)", self.role.value, tool_name, json.dumps(tool_args)[:200])
 
+                if request and request.pipeline_id:
+                    _emit_agent_event(
+                        pipeline_id=request.pipeline_id,
+                        event_type="tool_call",
+                        message=f"Executing tool: {tool_name}",
+                        stage=request.stage,
+                        data={"tool": tool_name, "args": tool_args}
+                    )
+
                 context = ToolContext(
                     agent_name=self.role.value if hasattr(self, 'role') else "",
                     workspace_dir=getattr(self, '_workspace_dir', ''),
@@ -333,6 +376,20 @@ class BaseAgent(ABC):
                 max_tokens=self._max_tokens(),
                 tools=tools,
             )
+
+            if response.content and response.content.strip() and request and request.pipeline_id:
+                # Extract text before any markdown blocks
+                thought_text = response.content.strip()
+                if "```" in thought_text:
+                    thought_text = thought_text.split("```")[0].strip()
+                
+                if thought_text:
+                    _emit_agent_event(
+                        pipeline_id=request.pipeline_id,
+                        event_type="thought",
+                        message=thought_text,
+                        stage=request.stage,
+                    )
 
         return response
 
@@ -374,7 +431,8 @@ class BaseAgent(ABC):
 
     def _max_tokens(self) -> int:
         """Default max tokens — agents can override based on expected output size."""
-        return 4096
+        return 8192
+
 
     def _compute_confidence(
         self,
@@ -397,19 +455,46 @@ class BaseAgent(ABC):
 
     @staticmethod
     def _safe_json_parse(text: str) -> dict[str, Any]:
-        """Try to parse JSON from LLM output, handling markdown fences."""
+        """Try to parse JSON from LLM output, resiliently handling markdown and noise."""
+        if not text or not text.strip():
+            raise ValueError("LLM returned empty content. This often happens if the model role (system/developer) is mismatched or parameters are unsupported.")
+
+        # Clean potential markdown fences first
         text = text.strip()
-        if text.startswith("```"):
-            # Strip markdown code fences
-            lines = text.split("\n")
-            lines = [l for l in lines if not l.strip().startswith("```")]
-            text = "\n".join(lines)
+        
+        # Regex to find the JSON block (from first '{' to last '}')
+        import re
+        match = re.search(r'(\{.*\})', text, re.DOTALL)
+        if match:
+            json_str = match.group(1)
+            try:
+                return json.loads(json_str)
+            except json.JSONDecodeError:
+                # If direct parse fails, try to clean common issues like unescaped newlines
+                try:
+                    # Replace literal newlines inside strings (dangerous but common issue)
+                    # We only do this if the first parse failed
+                    cleaned = json_str.replace('\n', '\\n').replace('\r', '\\r')
+                    # But wait, this might break the actual JSON structure. 
+                    # Let's try a safer approach: just report the error with the context
+                    return json.loads(json_str)
+                except Exception:
+                    pass
+        
+        # Fallback to the original method if regex didn't work or parse failed
         try:
             return json.loads(text)
-        except json.JSONDecodeError:
-            # Try to find JSON object in the text
+        except json.JSONDecodeError as e:
+            # Final best effort: find first { and last } manually
             start = text.find("{")
             end = text.rfind("}") + 1
             if start >= 0 and end > start:
-                return json.loads(text[start:end])
-            raise
+                try:
+                    return json.loads(text[start:end])
+                except Exception:
+                    pass
+            
+            # If we still fail, provide a snippet for debugging
+            snippet = text[:200] + "..." if len(text) > 200 else text
+            raise ValueError(f"Failed to parse JSON from output: {snippet}") from e
+

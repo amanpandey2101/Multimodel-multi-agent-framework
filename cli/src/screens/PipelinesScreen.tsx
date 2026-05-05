@@ -1,9 +1,9 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import { Box, Text, useInput } from 'ink'
-import { Spinner } from '../components/Spinner.js'
-import { PipelineStatusBadge } from '../components/PipelineStages.js'
-import * as api from '../api.js'
-import type { Pipeline, Screen } from '../types.js'
+import { Spinner } from '../components/Spinner'
+import { PipelineStatusBadge } from '../components/PipelineStages'
+import * as api from '../api'
+import type { Pipeline, Screen } from '../types'
 
 type Props = {
   projectId: string

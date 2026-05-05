@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
 
     # Pipeline
-    max_critic_iterations: int = Field(default=3, alias="MAX_CRITIC_ITERATIONS")
+    max_critic_iterations: int = Field(default=5, alias="MAX_CRITIC_ITERATIONS")
     pipeline_timeout_seconds: int = Field(default=600, alias="PIPELINE_TIMEOUT_SECONDS")
 
     model_config = {"env_file": ".env", "extra": "ignore"}

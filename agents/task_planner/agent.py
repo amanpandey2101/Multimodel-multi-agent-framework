@@ -30,11 +30,16 @@ class TaskPlannerAgent(BaseAgent):
         architecture = json.dumps(
             request.context_artifacts.get("architecture", {}), indent=2
         )
+        task_breakdown = json.dumps(
+            request.context_artifacts.get("task_breakdown", {}), indent=2
+        )
         constraints_str = json.dumps(request.constraints, indent=2) if request.constraints else "None"
 
         user_prompt = USER_PROMPT_TEMPLATE.format(
+            task_description=request.task_description,
             requirements=requirements,
             architecture=architecture,
+            current_tasks=task_breakdown,
             constraints=constraints_str,
             feedback_section=feedback_section,
         )

@@ -146,10 +146,16 @@ class OpenAIProvider(LLMProvider):
         model = model or self.default_model
         start = time.perf_counter_ns()
 
-        # Build messages with tool support
+        # Broaden check for newer models (o1, o3, gpt-5, etc.)
+        is_new_series = any(p in model.lower() for p in ["o1", "o3", "gpt-5", "o2"])
+
         api_messages = []
         for m in messages:
-            msg: dict[str, Any] = {"role": m.role, "content": m.content}
+            role = m.role
+            if role == "system" and is_new_series:
+                role = "developer"
+            
+            msg: dict[str, Any] = {"role": role, "content": m.content}
             if m.tool_calls:
                 msg["tool_calls"] = m.tool_calls
             if m.tool_call_id:
@@ -159,11 +165,16 @@ class OpenAIProvider(LLMProvider):
         kwargs: dict[str, Any] = {
             "model": model,
             "messages": api_messages,
-            "temperature": temperature,
-            "max_tokens": max_tokens,
         }
-        if response_format:
-            kwargs["response_format"] = response_format
+        
+        if is_new_series:
+            kwargs["max_completion_tokens"] = max_tokens
+        else:
+            kwargs["max_tokens"] = max_tokens
+            kwargs["temperature"] = temperature
+            if response_format:
+                kwargs["response_format"] = response_format
+
         if stop:
             kwargs["stop"] = stop
         if tools:
@@ -174,6 +185,13 @@ class OpenAIProvider(LLMProvider):
 
         choice = response.choices[0]
         usage = response.usage
+
+        # Handle refusals (common in o1/gpt-5)
+        refusal = getattr(choice.message, 'refusal', None)
+        content = choice.message.content or ""
+        
+        if refusal and not content:
+            content = f"REFUSAL: {refusal}"
 
         # Extract tool calls from response
         tool_calls_data = []
@@ -189,7 +207,7 @@ class OpenAIProvider(LLMProvider):
                 })
 
         return LLMResponse(
-            content=choice.message.content or "",
+            content=content,
             model=model,
             provider=self.provider_name,
             prompt_tokens=usage.prompt_tokens if usage else 0,
@@ -211,14 +229,21 @@ class OpenAIProvider(LLMProvider):
         stop: Optional[list[str]] = None,
     ) -> AsyncIterator[str]:
         model = model or self.default_model
-        stream = await self._client.chat.completions.create(
-            model=model,
-            messages=[{"role": m.role, "content": m.content} for m in messages],
-            temperature=temperature,
-            max_tokens=max_tokens,
-            stop=stop,
-            stream=True,
-        )
+        kwargs: dict[str, Any] = {
+            "model": model,
+            "messages": [{"role": m.role, "content": m.content} for m in messages],
+            "stop": stop,
+            "stream": True,
+        }
+        
+        is_new_series = any(model.startswith(p) for p in ["o1", "o3", "gpt-5", "o2"])
+        if is_new_series:
+            kwargs["max_completion_tokens"] = max_tokens
+        else:
+            kwargs["max_tokens"] = max_tokens
+            kwargs["temperature"] = temperature
+
+        stream = await self._client.chat.completions.create(**kwargs)
         async for chunk in stream:
             delta = chunk.choices[0].delta if chunk.choices else None
             if delta and delta.content:

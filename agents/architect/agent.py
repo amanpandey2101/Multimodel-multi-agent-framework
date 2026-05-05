@@ -47,4 +47,4 @@ class ArchitectAgent(BaseAgent):
         return 0.4
 
     def _max_tokens(self) -> int:
-        return 8192  # Architecture docs with many endpoints/models need room
+        return 16384  # Architecture plans can be large

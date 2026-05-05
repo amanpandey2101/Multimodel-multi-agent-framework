@@ -2,7 +2,7 @@
 // agent progress components: typed props, functional, Box/Text layout.
 import React from 'react'
 import { Box, Text } from 'ink'
-import type { PipelineStage, PipelineStatus } from '../types.js'
+import type { PipelineStage, PipelineStatus } from '../types'
 
 const STAGE_LABELS: Record<string, string> = {
   requirements:   'Requirements',

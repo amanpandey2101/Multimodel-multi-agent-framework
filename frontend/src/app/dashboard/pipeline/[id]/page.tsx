@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef, use } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   pipelinesApi,
   artifactsApi,
@@ -34,6 +35,8 @@ import {
   Copy,
   Check,
   RefreshCw,
+  Monitor,
+  Trash2,
 } from "lucide-react";
 
 interface PipelineEvent {
@@ -121,18 +124,18 @@ function CodeBlock({ code, language }: { code: string; language: string }) {
     });
   };
   return (
-    <div style={{ position: "relative" }}>
+    <div style={{ position: "relative", border: "1px solid var(--border)", overflow: "hidden" }}>
       <div style={{
         display: "flex", alignItems: "center", justifyContent: "space-between",
-        padding: "6px 14px", background: "rgba(0,0,0,0.25)",
-        borderBottom: "1px solid var(--border)", borderRadius: "var(--radius-md) var(--radius-md) 0 0",
+        padding: "8px 14px", background: "var(--bg-tertiary)",
+        borderBottom: "1px solid var(--border)",
       }}>
-        <span style={{ fontSize: "0.72rem", color: "var(--text-muted)", fontFamily: "monospace" }}>
+        <span style={{ fontSize: "0.72rem", color: "var(--text-primary)", fontWeight: 700, fontFamily: "monospace", textTransform: "uppercase", opacity: 0.8 }}>
           {language}
         </span>
         <button
           onClick={handleCopy}
-          style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 4, fontSize: "0.72rem" }}
+          style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-primary)", display: "flex", alignItems: "center", gap: 6, fontSize: "0.72rem", fontWeight: 600, opacity: 0.7 }}
         >
           {copied ? <Check size={12} /> : <Copy size={12} />}
           {copied ? "Copied!" : "Copy"}
@@ -140,9 +143,9 @@ function CodeBlock({ code, language }: { code: string; language: string }) {
       </div>
       <pre style={{
         margin: 0, padding: "16px", overflow: "auto", maxHeight: 480,
-        fontSize: "0.8rem", lineHeight: 1.65, color: "var(--text-secondary)",
+        fontSize: "0.82rem", lineHeight: 1.65, color: "var(--text-primary)",
         fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
-        background: "transparent", borderRadius: "0 0 var(--radius-md) var(--radius-md)",
+        background: "var(--bg-secondary)",
       }}>
         <code>{code}</code>
       </pre>
@@ -177,18 +180,36 @@ function ArtifactViewer({ artifacts, activeTab, onTabChange }: {
     <div className="artifact-viewer" style={{ display: "flex", flexDirection: "column" }}>
       {/* Stage Tabs */}
       <div className="artifact-tabs" style={{ flexShrink: 0 }}>
-        {artifacts.map((a) => (
-          <div
-            key={a.id}
-            className={`artifact-tab ${activeTab === a.stage_name ? "active" : ""}`}
-            onClick={() => { onTabChange(a.stage_name); setActiveFile(null); }}
-          >
-            {a.stage_name.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
-            <span style={{ fontSize: "0.65rem", color: "var(--text-muted)", marginLeft: 4 }}>
-              v{a.version}
-            </span>
-          </div>
-        ))}
+        {(() => {
+          // Filter to only show the latest version of each stage
+          const latestArtifacts = artifacts.reduce((acc, current) => {
+            if (!acc[current.stage_name] || current.version > acc[current.stage_name].version) {
+              acc[current.stage_name] = current;
+            }
+            return acc;
+          }, {} as Record<string, Artifact>);
+
+          return Object.values(latestArtifacts)
+            .sort((a, b) => {
+              const order = ["requirements", "architecture", "task_breakdown", "implementation", "review", "deployment"];
+              return order.indexOf(a.stage_name) - order.indexOf(b.stage_name);
+            })
+            .map((a) => (
+              <div
+                key={a.id}
+                className={`artifact-tab ${activeTab === a.stage_name ? "active" : ""}`}
+                onClick={() => {
+                  onTabChange(a.stage_name);
+                  setActiveFile(null);
+                }}
+              >
+                {a.stage_name.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+                <span style={{ fontSize: "0.65rem", color: "var(--text-muted)", marginLeft: 4 }}>
+                  v{a.version}
+                </span>
+              </div>
+            ));
+        })()}
       </div>
 
       {/* Split: File Tree + Code Panel */}
@@ -253,6 +274,11 @@ export default function PipelineDetailPage({
   const [events, setEvents] = useState<PipelineEvent[]>([]);
   const [activeTab, setActiveTab] = useState<string>("");
   const logEndRef = useRef<HTMLDivElement>(null);
+  const router = useRouter();
+  
+  const [showDelete, setShowDelete] = useState(false);
+  const [deleteKeyword, setDeleteKeyword] = useState("");
+  const [deleting, setDeleting] = useState(false);
 
   // GitHub state
   const [ghStatus, setGhStatus] = useState<GitHubStatus | null>(null);
@@ -265,6 +291,8 @@ export default function PipelineDetailPage({
   const [pushing, setPushing] = useState(false);
   const [pushResult, setPushResult] = useState<{ ok: boolean; msg: string } | null>(null);
 
+  const [retrying, setRetrying] = useState(false);
+
   // Initial data fetch
   useEffect(() => {
     pipelinesApi.get(id).then(setPipeline).catch(() => {});
@@ -273,12 +301,42 @@ export default function PipelineDetailPage({
       .then((a) => {
         setArtifacts(a);
         if (a.length > 0) {
-          setActiveTab((previous) => previous || a[0].stage_name);
+          // Find latest artifacts to determine active tab
+          const latest = a.reduce((acc, curr) => {
+            if (!acc[curr.stage_name] || curr.version > acc[curr.stage_name].version) {
+              acc[curr.stage_name] = curr;
+            }
+            return acc;
+          }, {} as Record<string, Artifact>);
+          
+          const sortedStages = Object.values(latest).sort((a, b) => {
+            const order = ["requirements", "architecture", "task_breakdown", "implementation", "review", "deployment"];
+            return order.indexOf(a.stage_name) - order.indexOf(b.stage_name);
+          });
+          
+          if (sortedStages.length > 0) {
+            setActiveTab((prev) => prev || sortedStages[sortedStages.length - 1].stage_name);
+          }
         }
       })
       .catch(() => {});
     githubApi.status().then(setGhStatus).catch(() => {});
   }, [id]);
+
+  const handleRetry = async () => {
+    setRetrying(true);
+    try {
+      await pipelinesApi.retry(id);
+      // Wait a moment for backend to update status
+      setTimeout(() => {
+        pipelinesApi.get(id).then(setPipeline).catch(() => {});
+        setRetrying(false);
+      }, 1000);
+    } catch (e) {
+      console.error(e);
+      setRetrying(false);
+    }
+  };
 
   // Supabase Realtime — pipeline_events
   useEffect(() => {
@@ -427,6 +485,10 @@ export default function PipelineDetailPage({
             <span className="badge-dot" />
             {pipeline.status}
           </span>
+          <Link href={`/dashboard/ide/${id}`} className="btn btn-primary btn-sm">
+            <Monitor size={14} />
+            Open Web IDE
+          </Link>
           {/* Push to GitHub Button */}
           {getStageStatus("implementation") === "completed" && (
             ghStatus?.connected ? (
@@ -448,8 +510,60 @@ export default function PipelineDetailPage({
               Cancel
             </button>
           )}
+          {(pipeline.status === "failed" || pipeline.status === "cancelled") && (
+            <button 
+              className="btn btn-primary btn-sm" 
+              onClick={handleRetry}
+              disabled={retrying}
+            >
+              <RefreshCw size={14} className={retrying ? "animate-spin" : ""} />
+              {retrying ? "Retrying..." : "Retry Pipeline"}
+            </button>
+          )}
+          <button className="btn btn-danger btn-sm" style={{ background: "transparent", border: "1px solid var(--error)", color: "var(--error)" }} onClick={() => setShowDelete(true)}>
+            <Trash2 size={14} />
+            Delete
+          </button>
         </div>
       </div>
+
+      {showDelete && (
+        <div className="modal-overlay" onClick={() => setShowDelete(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h2 className="modal-title">Delete Pipeline</h2>
+            <p className="modal-description">
+              This action cannot be undone. To confirm, type <strong>delete</strong> below.
+            </p>
+            <div className="form-group">
+              <input
+                className="form-input"
+                value={deleteKeyword}
+                onChange={(e) => setDeleteKeyword(e.target.value)}
+                placeholder="delete"
+              />
+            </div>
+            <div className="modal-actions">
+              <button className="btn btn-ghost" onClick={() => setShowDelete(false)}>Cancel</button>
+              <button
+                className="btn btn-danger"
+                disabled={deleteKeyword !== "delete" || deleting}
+                onClick={async () => {
+                  setDeleting(true);
+                  try {
+                    await pipelinesApi.delete(id);
+                    router.push(`/dashboard/projects/${pipeline.project_id}`);
+                  } catch (e) {
+                    console.error(e);
+                    setDeleting(false);
+                  }
+                }}
+              >
+                {deleting ? "Deleting..." : "Delete Pipeline"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Agent Flow */}
       <div className="card" style={{ marginBottom: 24, padding: "16px 24px" }}>
@@ -604,11 +718,11 @@ export default function PipelineDetailPage({
                   <div className="timeline-marker">
                     <div className={`timeline-dot ${status}`}>
                       {status === "running" ? (
-                        <Loader2 size={10} style={{ animation: "spin 1s linear infinite", color: "var(--accent-primary)" }} />
+                        <Loader2 size={8} style={{ animation: "spin 1s linear infinite", color: "white" }} />
                       ) : status === "completed" ? (
-                        <CheckCircle2 size={10} style={{ color: "var(--success)" }} />
+                        <CheckCircle2 size={8} style={{ color: "white" }} />
                       ) : status === "failed" ? (
-                        <XCircle size={10} style={{ color: "var(--error)" }} />
+                        <XCircle size={8} style={{ color: "white" }} />
                       ) : null}
                     </div>
                     {idx < AGENT_STAGES.length - 1 && <div className="timeline-line" />}

@@ -83,7 +83,7 @@ def _resolve_api_key(provider_name: str, settings: Any) -> str | None:
     return None
 
 
-async def run_pipeline_task(pipeline_id: str) -> None:
+async def run_pipeline_task(pipeline_id: str, interactive: bool = False) -> None:
     """
     Execute all pipeline stages sequentially in a background task.
     """
@@ -107,6 +107,33 @@ async def run_pipeline_task(pipeline_id: str) -> None:
         provider_name = pipe_data.get("llm_provider", settings.default_llm_provider)
         model_name = pipe_data.get("llm_model", "")
         requirement = pipe_data.get("requirement", "")
+        
+        if interactive:
+            # Get latest user message from events
+            user_msg = (
+                supabase.table("pipeline_events")
+                .select("message")
+                .eq("pipeline_id", pipeline_id)
+                .eq("event_type", "user_message")
+                .order("created_at", desc=True)
+                .limit(1)
+                .maybe_single()
+                .execute()
+            )
+            if user_msg.data:
+                # Prioritize the update and explicitly warn against rebuilding from scratch
+                requirement = (
+                    "!!! ACTION REQUIRED: PERFORM THIS SPECIFIC UPDATE !!!\n"
+                    f"INSTRUCTION: {user_msg.data['message']}\n\n"
+                    "CONTEXT: You are modifying an existing project. The original goal was: "
+                    f"'{requirement}'.\n\n"
+                    "STRICT RULES:\n"
+                    "1. DO NOT REBUILD THE PROJECT FROM SCRATCH.\n"
+                    "2. ONLY IMPLEMENT THE SPECIFIC CHANGE REQUESTED ABOVE.\n"
+                    "3. PRESERVE ALL EXISTING CODE AND FILES THAT ARE NOT RELATED TO THIS CHANGE.\n"
+                    "4. DO NOT ADD UNSOLICITED OPTIMIZATIONS OR TASKS."
+                )
+        
         api_key = _resolve_api_key(provider_name, settings)
 
         current = supabase.table("pipelines").select("status").eq("id", pipeline_id).single().execute()
@@ -141,7 +168,29 @@ async def run_pipeline_task(pipeline_id: str) -> None:
             ("deployment", DevOpsAgent(provider), AgentRole.DEVOPS),
         ]
 
+        if interactive:
+            # In interactive mode, we focus on re-planning and re-implementing
+            # We skip requirements/architecture if it's a minor change, 
+            # but for simplicity now we just filter the list to relevant stages
+            # or keep all but update the 'accumulated_context' with latest artifacts
+            stage_agents = [
+                ("task_breakdown", TaskPlannerAgent(provider), AgentRole.TASK_PLANNER),
+                ("implementation", EngineerAgent(provider), AgentRole.ENGINEER),
+            ]
+
         accumulated_context: dict[str, Any] = {}
+        
+        if interactive:
+            # Load existing artifacts to give context for re-planning/re-implementing
+            arts = (
+                supabase.table("artifacts")
+                .select("*")
+                .eq("pipeline_id", pipeline_id)
+                .order("created_at", desc=False)
+                .execute()
+            )
+            for art in arts.data:
+                accumulated_context[art["artifact_type"]] = art["content"]
 
         for stage_name, agent, role in stage_agents:
             current = supabase.table("pipelines").select("status").eq("id", pipeline_id).single().execute()
@@ -160,11 +209,15 @@ async def run_pipeline_task(pipeline_id: str) -> None:
                     agent_role=role,
                     task_description=(
                         requirement
-                        if stage_name == "requirements"
+                        if (stage_name == "requirements" or interactive)
                         else f"Based on the upstream artifacts, perform: {stage_name}"
                     ),
                     context_artifacts=accumulated_context,
-                    constraints=config.get("constraints", {}),
+                    constraints={
+                        **config.get("constraints", {}),
+                        "is_update": interactive,
+                        "mode": "evolution" if interactive else "creation"
+                    },
                 )
 
                 review_fn = reviewer.review_artifacts if (enable_critic and stage_name != "review") else None
@@ -193,6 +246,7 @@ async def run_pipeline_task(pipeline_id: str) -> None:
                     iteration=response.iteration,
                     output_data=response.artifacts if succeeded else {},
                 )
+
                 _emit_event(
                     pipeline_id,
                     "stage_completed" if succeeded else "stage_failed",
@@ -215,7 +269,16 @@ async def run_pipeline_task(pipeline_id: str) -> None:
             "status": "completed",
             "completed_at": completed_at,
         }).eq("id", pipeline_id).execute()
-        _emit_event(pipeline_id, "pipeline_completed", "Pipeline completed successfully")
+        
+        # Generate final summary
+        final_summary = "### Pipeline Completed Successfully\n\n"
+        if "implementation" in accumulated_context:
+            files = accumulated_context["implementation"].get("files", [])
+            file_names = [f.get("path", "") for f in files if "path" in f]
+            if file_names:
+                final_summary += "**Summary of changes:**\n" + "\n".join(f"- Updated `{name}`" for name in file_names)
+        
+        _emit_event(pipeline_id, "pipeline_completed", final_summary)
 
     except Exception as exc:
         logger.error("Pipeline %s failed: %s\n%s", pipeline_id, exc, traceback.format_exc())

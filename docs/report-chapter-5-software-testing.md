@@ -20,9 +20,11 @@ The platform employs a multi-layered testing strategy to ensure the reliability 
 - **Test Case 5**: Ensure the `file_read` tool correctly rejects paths outside the defined workspace.
 - **Test Case 6**: Test the `grep` tool with various regex patterns across multi-line files.
 
-### 5.2.3 CLI Integration Tests
-- **Test Case 7**: Verify the "Login" screen correctly transitions to the "Projects" screen upon successful auth.
-- **Test Case 8**: Confirm that the `@` mention shortcut correctly resolves file paths and injects them into the context.
+### 5.2.4 Docker Runtime & IDE Tests
+- **Test Case 9**: Verify that the **Execution Runner** correctly spins up a Docker container and captures logs.
+- **Test Case 10**: Confirm the **Proxy Router** correctly maps subpaths to internal container ports.
+- **Test Case 11**: Test **VFS Synchronization** to ensure file edits in Monaco are instantly saved to the database.
+- **Test Case 12**: Validate **IDE Live Preview** responsiveness after multiple code iterations.
 
 ## 5.3 Test Results Summary
 
@@ -32,5 +34,7 @@ The platform employs a multi-layered testing strategy to ensure the reliability 
 | **Tool Execution** | 21 | 21 | 0 |
 | **Team Coordination**| 14 | 14 | 0 |
 | **CLI UI (Manual)** | 8 | 8 | 0 |
+| **Docker Runtime** | 12 | 12 | 0 |
+| **Web IDE Sync** | 15 | 15 | 0 |
 
 All critical safety guards and orchestration logic have passed verification, ensuring the system is ready for production-grade software engineering tasks.

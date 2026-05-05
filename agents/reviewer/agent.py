@@ -103,12 +103,29 @@ class ReviewerAgent(BaseAgent):
                 suggestion=finding.get("suggestion"),
             ))
 
+        # --- Pragmatic Override Logic ---
+        # If the score is decent (>= 0.5) and there are no CRITICAL findings, 
+        # we force approval to prevent 'refinement hell' on simple projects.
+        approved = review_data.get("approved", False)
+        quality_score = review_data.get("overall_quality_score", 0.0)
+        
+        has_critical = any(issue.severity == Severity.CRITICAL for issue in issues)
+        
+        if quality_score >= 0.5 and not has_critical:
+            if not approved:
+                logger.info(
+                    "[Reviewer] Overriding rejection: score %.2f is acceptable with no critical issues.",
+                    quality_score
+                )
+            approved = True
+
         return CriticFeedback(
             pipeline_id=pipeline_id,
             stage=stage,
             iteration=iteration,
-            approved=review_data.get("approved", False),
+            approved=approved,
             issues=issues,
             suggestions=review_data.get("recommendations", []),
             overall_comment=review_data.get("summary", ""),
+
         )

@@ -36,7 +36,7 @@ export default function Home() {
           <Zap size={26} strokeWidth={2.5} />
         </div>
         <span style={{ fontSize: "0.8rem", color: "var(--text-muted)", letterSpacing: "0.08em" }}>
-          MULTI-AGENT
+          Weave
         </span>
       </div>
     );

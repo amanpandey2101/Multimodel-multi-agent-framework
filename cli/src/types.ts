@@ -44,3 +44,4 @@ export type Screen =
   | { type: 'new-pipeline'; projectId: string; projectName: string }
   | { type: 'watch'; pipelineId: string }
   | { type: 'help' }
+  | { type: 'chat' }

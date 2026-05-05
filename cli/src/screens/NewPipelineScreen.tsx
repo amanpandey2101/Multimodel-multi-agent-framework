@@ -1,9 +1,9 @@
 import React, { useState, useCallback } from 'react'
 import { Box, Text, useInput } from 'ink'
 import TextInput from 'ink-text-input'
-import { Spinner } from '../components/Spinner.js'
-import * as api from '../api.js'
-import type { Screen } from '../types.js'
+import { Spinner } from '../components/Spinner'
+import * as api from '../api'
+import type { Screen } from '../types'
 
 type Props = {
   projectId: string

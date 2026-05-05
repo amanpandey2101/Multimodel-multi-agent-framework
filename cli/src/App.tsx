@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react'
 import { Box, Text } from 'ink'
-import { LoginScreen } from './screens/LoginScreen.js'
-import { ProjectsScreen } from './screens/ProjectsScreen.js'
-import { PipelinesScreen } from './screens/PipelinesScreen.js'
-import { NewPipelineScreen } from './screens/NewPipelineScreen.js'
-import { WatchScreen } from './screens/WatchScreen.js'
-import { StatusLine } from './components/StatusLine.js'
-import * as api from './api.js'
-import type { Screen } from './types.js'
+import { LoginScreen } from './screens/LoginScreen'
+import { ProjectsScreen } from './screens/ProjectsScreen'
+import { PipelinesScreen } from './screens/PipelinesScreen'
+import { NewPipelineScreen } from './screens/NewPipelineScreen'
+import { WatchScreen } from './screens/WatchScreen'
+import { ChatScreen } from './screens/ChatScreen'
+import { StatusLine } from './components/StatusLine'
+import * as api from './api'
+import type { Screen } from './types'
 
 export function App(): React.ReactNode {
   const [screen, setScreen] = useState<Screen>({ type: 'splash' })
@@ -36,7 +37,8 @@ export function App(): React.ReactNode {
     // Check backend health before we try logging in
     void api.checkHealth().then(ok => {
       if (!ok) {
-        setError("Cannot reach backend server. Make sure it's running.")
+        setError("Cannot reach backend server. Some features may be disabled.")
+        setScreen({ type: 'login' })
       } else {
         void autoLogin()
       }
@@ -53,7 +55,7 @@ export function App(): React.ReactNode {
       case 'splash':
         return (
           <Box paddingX={2} paddingY={1}>
-            <Text>Loading Multi-Agent Platform…</Text>
+            <Text>Loading AgentiX Platform...</Text>
           </Box>
         )
       case 'login':
@@ -64,6 +66,7 @@ export function App(): React.ReactNode {
               setError(null)
               setScreen({ type: 'projects' })
             }}
+            onChat={() => handleNavigate({ type: 'chat' })}
             onError={setError}
           />
         )
@@ -75,10 +78,12 @@ export function App(): React.ReactNode {
         return <NewPipelineScreen projectId={screen.projectId} projectName={screen.projectName} onNavigate={handleNavigate} onError={setError} />
       case 'watch':
         return <WatchScreen pipelineId={screen.pipelineId} onNavigate={handleNavigate} onError={setError} />
+      case 'chat':
+        return <ChatScreen onNavigate={handleNavigate} />
       case 'help':
         return (
           <Box flexDirection="column" paddingX={2} paddingY={1}>
-            <Text bold color="magenta">Multi-Agent Platform CLI</Text>
+            <Text bold color="magenta">AgentiX Platform CLI</Text>
             <Text dimColor>Version 1.0.0</Text>
             <Box marginTop={1} flexDirection="column">
               <Text>The CLI allows you to start and monitor engineering pipelines.</Text>
