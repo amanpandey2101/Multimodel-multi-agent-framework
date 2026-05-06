@@ -87,7 +87,6 @@ class TaskQueue:
         self._tasks: dict[str, Task] = {}
 
     def add(self, task: Task) -> None:
-        """Add a task to the queue."""
         # If task has unresolved dependencies, mark as blocked
         if task.depends_on:
             unresolved = [

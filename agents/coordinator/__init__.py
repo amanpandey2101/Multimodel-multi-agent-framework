@@ -4,9 +4,6 @@ Coordinator Agent — decomposes goals into task graphs and synthesises results.
 The "killer feature" — a coordinator agent receives a high-level goal,
 the team roster, and produces a structured task breakdown with assignments
 and dependencies. After tasks complete, it synthesises a final answer.
-
-Inspired by open-multi-agent's coordinator pattern and claude-source's
-coordinatorMode.
 """
 
 from __future__ import annotations
